@@ -3,3 +3,5 @@ docxlib
 *.docx
 /*.xml
 .DS_Store
+images
+temp
