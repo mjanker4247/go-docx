@@ -3,6 +3,7 @@
    Copyright (c) 2021 Gonzalo Fernandez-Victorio
    Copyright (c) 2021 Basement Crowd Ltd (https://www.basementcrowd.com)
    Copyright (c) 2023 Fumiama Minamoto (源文雨)
+   Copyright (c) 2024 mjanker4247
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU Affero General Public License as published
@@ -22,246 +23,188 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
-	"io"
+	"log"
 	"os"
-	"regexp"
-	"strconv"
-	"strings"
+	"path/filepath"
 
-	"github.com/fumiama/go-docx"
+	"github.com/mjanker4247/go-docx"
 )
+
+// Returns a slice of image file paths from the specified directory
+func getImageFiles(dir string) ([]string, error) {
+	var images []string
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filePath := filepath.Join(dir, entry.Name())
+		if isImage(filePath) {
+			images = append(images, filePath)
+		}
+	}
+
+	return images, nil
+}
+
+// Determines if a file is an image based on magic bytes
+func isImage(filename string) bool {
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Printf("Failed to open file: %s", err)
+		return false
+	}
+	defer file.Close()
+
+	// Read the first 8 bytes to identify the image type
+	magicBytes := make([]byte, 8)
+	if _, err := file.Read(magicBytes); err != nil {
+		log.Printf("Failed to read file: %s", err)
+		return false
+	}
+
+	switch {
+	case bytes.HasPrefix(magicBytes, []byte{0xFF, 0xD8, 0xFF}): // JPEG
+		return true
+	case bytes.HasPrefix(magicBytes, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}): // PNG
+		return true
+	case bytes.HasPrefix(magicBytes, []byte{0x47, 0x49, 0x46, 0x38}): // GIF
+		return true
+	case bytes.HasPrefix(magicBytes, []byte{0x42, 0x4D}): // BMP
+		return true
+	case bytes.HasPrefix(magicBytes, []byte{0x49, 0x49}) || bytes.HasPrefix(magicBytes, []byte{0x4D, 0x4D}): // TIFF
+		return true
+	default:
+		return false
+	}
+}
 
 func main() {
 	fileLocation := flag.String("f", "new-file.docx", "file location")
-	analyzeOnly := flag.Bool("a", false, "analyze file only")
-	clean := flag.Bool("c", false, "clean mode (keep text and picture only)")
-	unm := flag.Bool("u", false, "lease unmarshalled file")
-	splitre := flag.String("s", "", "split file into many docxs by matching regex")
-	droppp := flag.Bool("p", false, "drop all paragraph properties")
-	dupnum := flag.Uint("d", 0, "copy times of the file into dup_filename")
+	dir := flag.String("d", "./images", "Directory containing images")
 	flag.Parse()
+
+	// Get a list of image files from the directory
+	files, err := getImageFiles(*dir)
+	if err != nil {
+		log.Fatalf("Failed to get image files: %v", err)
+	}
+
 	var w *docx.Docx
-	if !*analyzeOnly {
-		fmt.Printf("Preparing new document to write at %s\n", *fileLocation)
 
-		w = docx.New().WithDefaultTheme().WithA4Page()
-		// add new paragraph
-		para1 := w.AddParagraph().Justification("distribute")
-		r, err := para1.AddAnchorDrawingFrom("testdata/fumiama.JPG")
+	fmt.Printf("Preparing new document to write at %s\n", *fileLocation)
+
+	w = docx.New().WithDefaultTheme().WithA4Page()
+
+	// Add images with captions to the document
+	for i, filePath := range files {
+		caption := fmt.Sprintf("Image %d: %s", i+1, filepath.Base(filePath))
+
+		// Add image to the document 
+		p1 := w.AddParagraph().Justification("center")
+		_, err = p1.AddInlineDrawingFrom(filePath)
 		if err != nil {
 			panic(err)
 		}
-		r.Children[0].(*docx.Drawing).Anchor.Size(r.Children[0].(*docx.Drawing).Anchor.Extent.CX/4, r.Children[0].(*docx.Drawing).Anchor.Extent.CY/4)
-		r.Children[0].(*docx.Drawing).Anchor.BehindDoc = 1
-		r.Children[0].(*docx.Drawing).Anchor.PositionH.PosOffset = r.Children[0].(*docx.Drawing).Anchor.Extent.CX
-		r.Children[0].(*docx.Drawing).Anchor.Graphic.GraphicData.Pic.BlipFill.Blip.AlphaModFix = &docx.AAlphaModFix{Amount: 50000}
-		// add text
-		para1.AddText("test").AddTab()
-		para1.AddText("size").Size("44").AddTab()
-		para1.AddText("color").Color("808080").AddTab()
-		para1.AddText("shade").Shade("clear", "auto", "E7E6E6").AddTab()
-		para1.AddText("bold").Bold().AddTab()
-		para1.AddText("italic").Italic().AddTab()
-		para1.AddText("underline").Underline("double").AddTab()
-		para1.AddText("highlight").Highlight("yellow").AddTab()
-		para1.AddText("font").Font("Consolas", "", "cs").AddTab()
-
-		para2 := w.AddParagraph().Justification("end")
-		para2.AddText("test all font attrs").
-			Size("44").Color("ff0000").Font("Consolas", "", "cs").
-			Shade("clear", "auto", "E7E6E6").
-			Bold().Italic().Underline("wave").
-			Highlight("yellow")
-
-		nextPara := w.AddParagraph()
-		nextPara.AddLink("google", `http://google.com`)
-
-		para3 := w.AddParagraph().Justification("center")
-		// add text
-		para3.AddText("一行2个 inline").Size("44")
-
-		para4 := w.AddParagraph().Justification("center")
-		r, err = para4.AddInlineDrawingFrom("testdata/fumiama.JPG")
-		if err != nil {
-			panic(err)
-		}
-		r.Children[0].(*docx.Drawing).Inline.Size(r.Children[0].(*docx.Drawing).Inline.Extent.CX*4/5, r.Children[0].(*docx.Drawing).Inline.Extent.CY*4/5)
-		para4.AddTab().AddTab()
-		r, err = para4.AddInlineDrawingFrom("testdata/fumiama2x.webp")
-		if err != nil {
-			panic(err)
-		}
-		r.Children[0].(*docx.Drawing).Inline.Size(r.Children[0].(*docx.Drawing).Inline.Extent.CX*4/5, r.Children[0].(*docx.Drawing).Inline.Extent.CY*4/5)
-
-		w.AddParagraph().AddPageBreaks()
-		para5 := w.AddParagraph().Justification("center")
-		// add text
-		para5.AddText("一行1个 横向 inline").Size("44")
-
-		para6 := w.AddParagraph()
-		_, err = para6.AddInlineDrawingFrom("testdata/fumiamayoko.png")
-		if err != nil {
-			panic(err)
-		}
-
-		w.AddParagraph()
-
-		tbl1 := w.AddTable(9, 9, 0, nil)
-		for x, r := range tbl1.TableRows {
-			red := (x + 1) * 28
-			for y, c := range r.TableCells {
-				green := ((y + 1) / 3) * 85
-				blue := (y%3 + 1) * 85
-				v := fmt.Sprintf("%02X%02X%02X", red, green, blue)
-				c.Shade("clear", "auto", v).AddParagraph().AddText(v).Size("18")
-			}
-		}
-
-		w.AddParagraph()
-
-		tbl2 := w.AddTableTwips([]int64{2333, 2333, 2333}, []int64{2333, 2333}, 0, nil).Justification("center")
-		for x, r := range tbl2.TableRows {
-			r.Justification("center")
-			for y, c := range r.TableCells {
-				c.TableCellProperties.VAlign = &docx.WVerticalAlignment{Val: "center"}
-				c.AddParagraph().Justification("center").AddText(fmt.Sprintf("(%d, %d)", x, y))
-			}
-		}
-		tbl2.TableRows[0].TableCells[0].Shade("clear", "auto", "E7E6E6")
-
-		p := w.AddParagraph().Justification("center")
-		p.AddText("测试 AutoShape w:ln").Size("44")
-		_ = p.AddAnchorShape(808355, 238760, "AutoShape", "auto", "straightConnector1",
-			&docx.ALine{
-				W:         9525,
-				SolidFill: &docx.ASolidFill{SrgbClr: &docx.ASrgbClr{Val: "000000"}},
-				Round:     &struct{}{},
-				HeadEnd:   &docx.AHeadEnd{},
-				TailEnd:   &docx.ATailEnd{},
-			},
-		)
-		_ = p.AddInlineShape(808355, 238760, "AutoShape", "auto", "straightConnector1",
-			&docx.ALine{
-				W:         9525,
-				SolidFill: &docx.ASolidFill{SrgbClr: &docx.ASrgbClr{Val: "000000"}},
-				Round:     &struct{}{},
-				HeadEnd:   &docx.AHeadEnd{},
-				TailEnd:   &docx.ATailEnd{},
-			},
-		)
-
-		f, err := os.Create(*fileLocation)
-		if err != nil {
-			panic(err)
-		}
-		_, err = w.WriteTo(f)
-		if err != nil {
-			panic(err)
-		}
-		err = f.Close()
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("Document writen. \nNow trying to read it")
+		// Add a line break
+		p2 := w.AddParagraph().Justification("center")
+		p2.AddText(caption)
 	}
 
-	// Now let's try to read the file
-	readFile, err := os.Open(*fileLocation)
+	// add new paragraph
+	// para1 := w.AddParagraph().Justification("distribute")
+
+	// add text
+	// para1.AddText("test").AddTab()
+	// para1.AddText("size").Size("44").AddTab()
+	// para1.AddText("color").Color("808080").AddTab()
+	// para1.AddText("shade").Shade("clear", "auto", "E7E6E6").AddTab()
+	// para1.AddText("bold").Bold().AddTab()
+	// para1.AddText("italic").Italic().AddTab()
+	// para1.AddText("underline").Underline("double").AddTab()
+	// para1.AddText("highlight").Highlight("yellow").AddTab()
+	// para1.AddText("font").Font("Consolas", "", "cs").AddTab()
+
+	// para2 := w.AddParagraph().Justification("end")
+	// para2.AddText("test all font attrs").
+	// 	Size("44").Color("ff0000").Font("Consolas", "", "cs").
+	// 	Shade("clear", "auto", "E7E6E6").
+	// 	Bold().Italic().Underline("wave").
+	// 	Highlight("yellow")
+
+	// nextPara := w.AddParagraph()
+	// nextPara.AddLink("google", `http://google.com`)
+
+	// para3 := w.AddParagraph().Justification("center")
+	// // add text
+	// para3.AddText("一行2个 inline").Size("44")
+
+	// para4 := w.AddParagraph().Justification("center")
+	// r, err := para4.AddInlineDrawingFrom("testdata/fumiama.JPG")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// para4.AddTab().AddTab()
+	// r, err = para4.AddInlineDrawingFrom("testdata/fumiama2x.webp")
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	// w.AddParagraph().AddPageBreaks()
+	// para5 := w.AddParagraph().Justification("center")
+	// // add text
+	// para5.AddText("一行1个 横向 inline").Size("44")
+
+	// para6 := w.AddParagraph()
+	// _, err = para6.AddInlineDrawingFrom("testdata/fumiamayoko.png")
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+
+	// p := w.AddParagraph().Justification("center")
+	// p.AddText("测试 AutoShape w:ln").Size("44")
+	// _ = p.AddAnchorShape(808355, 238760, "AutoShape", "auto", "straightConnector1",
+	// 	&docx.ALine{
+	// 		W:         9525,
+	// 		SolidFill: &docx.ASolidFill{SrgbClr: &docx.ASrgbClr{Val: "000000"}},
+	// 		Round:     &struct{}{},
+	// 		HeadEnd:   &docx.AHeadEnd{},
+	// 		TailEnd:   &docx.ATailEnd{},
+	// 	},
+	// )
+	// _ = p.AddInlineShape(808355, 238760, "AutoShape", "auto", "straightConnector1",
+	// 	&docx.ALine{
+	// 		W:         9525,
+	// 		SolidFill: &docx.ASolidFill{SrgbClr: &docx.ASrgbClr{Val: "000000"}},
+	// 		Round:     &struct{}{},
+	// 		HeadEnd:   &docx.AHeadEnd{},
+	// 		TailEnd:   &docx.ATailEnd{},
+	// 	},
+	// )
+
+	f, err := os.Create(*fileLocation)
 	if err != nil {
 		panic(err)
 	}
-	fileinfo, err := readFile.Stat()
+	_, err = w.WriteTo(f)
 	if err != nil {
 		panic(err)
 	}
-	size := fileinfo.Size()
-	doc, err := docx.Parse(readFile, size)
+	err = f.Close()
 	if err != nil {
 		panic(err)
 	}
-	if *clean {
-		doc.Document.Body.DropDrawingOf("NilPicture")
-	}
-	if *droppp {
-		for _, it := range doc.Document.Body.Items {
-			switch o := it.(type) {
-			case *docx.Paragraph: // printable
-				o.Properties = nil
-			case *docx.Table: // printable
-				for _, tr := range o.TableRows {
-					for _, tc := range tr.TableCells {
-						for _, p := range tc.Paragraphs {
-							p.Properties = nil
-						}
-					}
-				}
-			}
-		}
-	}
-	if *unm {
-		i := strings.LastIndex(*fileLocation, "/")
-		name := (*fileLocation)[:i+1] + "unmarshal_" + (*fileLocation)[i+1:]
-		f, err := os.Create(name)
-		if err != nil {
-			panic(err)
-		}
-		_, err = doc.WriteTo(f)
-		if err != nil {
-			panic(err)
-		}
-		err = f.Close()
-		if err != nil {
-			panic(err)
-		}
-	}
-	fmt.Println("Plain text:")
-	for _, it := range doc.Document.Body.Items {
-		switch o := it.(type) {
-		case *docx.Paragraph: // printable
-			fmt.Println(o.String())
-		case *docx.Table: // printable
-			fmt.Println(o.String())
-		}
-	}
-	if *splitre != "" {
-		a := strings.LastIndex(*fileLocation, "/")
-		b := strings.LastIndex(*fileLocation, ".")
-		for i, splitteddoc := range doc.SplitByParagraph(docx.SplitDocxByPlainTextRegex(regexp.MustCompile(*splitre))) {
-			name := (*fileLocation)[:a+1] + "unmarshal_" + (*fileLocation)[a+1:b] + "_split" + strconv.Itoa(i) + (*fileLocation)[b:]
-			f, err := os.Create(name)
-			if err != nil {
-				panic(err)
-			}
-			_, err = splitteddoc.WriteTo(f)
-			if err != nil {
-				panic(err)
-			}
-			err = f.Close()
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
-	if *dupnum > 1 {
-		a := strings.LastIndex(*fileLocation, "/")
-		name := "dup_" + (*fileLocation)
-		if a > 0 {
-			name = (*fileLocation)[:a+1] + "dup_" + (*fileLocation)[a:]
-		}
-		f, err := os.Create(name)
-		if err != nil {
-			panic(err)
-		}
-		newFile := docx.New().WithDefaultTheme().WithA4Page()
-		for i := 0; i < int(*dupnum); i++ {
-			newFile.AppendFile(doc)
-		}
-		_, err = io.Copy(f, newFile)
-		if err != nil {
-			panic(err)
-		}
-	}
+	fmt.Println("Document writen.")
+
 	fmt.Println("End of main")
 }
