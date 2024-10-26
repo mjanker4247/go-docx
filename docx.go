@@ -144,7 +144,7 @@ func LoadBodyItems(items []interface{}, media []Media) *Docx {
 	for i, m := range media {
 		doc.mediaNameIdx[m.Name] = i
 	}
-	doc.slowIDs["图片"] = uintptr(len(media) + 1)
+	doc.slowIDs["picture"] = uintptr(len(media) + 1)
 	return doc
 }
 

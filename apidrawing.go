@@ -36,7 +36,7 @@ func (p *Paragraph) AddInlineDrawing(pic []byte) (*Run, error) {
 		return nil, err
 	}
 	idn := int(atomic.AddUintptr(&p.file.docID, 1))
-	id := int(p.file.IncreaseID("图片"))
+	id := int(p.file.IncreaseID("picture"))
 	ids := strconv.Itoa(id)
 	rid := p.file.addImage(format, pic)
 	w, h := int64(sz.Width), int64(sz.Height)
@@ -59,7 +59,7 @@ func (p *Paragraph) AddInlineDrawing(pic []byte) (*Run, error) {
 			EffectExtent: &WPEffectExtent{},
 			DocPr: &WPDocPr{
 				ID:   idn,
-				Name: "图片 " + ids,
+				Name: "picture " + ids,
 			},
 			CNvGraphicFramePr: &WPCNvGraphicFramePr{
 				Locks: AGraphicFrameLocks{
@@ -76,7 +76,7 @@ func (p *Paragraph) AddInlineDrawing(pic []byte) (*Run, error) {
 						NonVisualPicProperties: &PICNonVisualPicProperties{
 							NonVisualDrawingProperties: NonVisualProperties{
 								ID:   id,
-								Name: "图片 " + ids,
+								Name: "picture " + ids,
 							},
 						},
 						BlipFill: &PICBlipFill{
@@ -139,7 +139,7 @@ func (p *Paragraph) AddAnchorDrawing(pic []byte) (*Run, error) {
 		return nil, err
 	}
 	idn := int(atomic.AddUintptr(&p.file.docID, 1))
-	id := int(p.file.IncreaseID("图片"))
+	id := int(p.file.IncreaseID("picture"))
 	ids := strconv.Itoa(id)
 	rid := p.file.addImage(format, pic)
 	w, h := int64(sz.Width), int64(sz.Height)
@@ -171,7 +171,7 @@ func (p *Paragraph) AddAnchorDrawing(pic []byte) (*Run, error) {
 			WrapNone:     &struct{}{},
 			DocPr: &WPDocPr{
 				ID:   idn,
-				Name: "图片 " + ids,
+				Name: "picture " + ids,
 			},
 			CNvGraphicFramePr: &WPCNvGraphicFramePr{
 				Locks: AGraphicFrameLocks{
@@ -188,7 +188,7 @@ func (p *Paragraph) AddAnchorDrawing(pic []byte) (*Run, error) {
 						NonVisualPicProperties: &PICNonVisualPicProperties{
 							NonVisualDrawingProperties: NonVisualProperties{
 								ID:   id,
-								Name: "图片 " + ids,
+								Name: "picture " + ids,
 							},
 						},
 						BlipFill: &PICBlipFill{
